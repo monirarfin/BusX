@@ -11,8 +11,8 @@ service cloud.firestore {
       return request.auth != null;
     }
     
-    function emailVerified() {
-      return request.auth.token.email_verified == true;
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
     }
     
     function isOwner(userId) {
@@ -48,16 +48,22 @@ service cloud.firestore {
 
     // --- Deliveries Collection ---
     match /deliveries/{deliveryId} {
-      allow read: if isSignedIn() && (
-        isOwner(existing().senderId) || 
-        isOwner(existing().driverId) ||
-        existing().status == 'pending' // Drivers can see pending to accept
+      allow get: if isSignedIn() && (
+        ( 'senderId' in existing() && isOwner(existing().senderId) ) || 
+        ( 'driverId' in existing() && isOwner(existing().driverId) ) ||
+        ( 'status' in existing() && existing().status == 'pending' )
+      );
+
+      allow list: if isSignedIn() && (
+        ( 'senderId' in resource.data && resource.data.senderId == request.auth.uid ) ||
+        ( 'driverId' in resource.data && resource.data.driverId == request.auth.uid ) ||
+        ( 'status' in resource.data && resource.data.status == 'pending' )
       );
       
-      allow create: if isSignedIn() && isValidDelivery(incoming()) 
+      allow create: if isVerified() && isValidDelivery(incoming()) 
                     && isOwner(incoming().senderId);
                     
-      allow update: if isSignedIn() && (
+      allow update: if isVerified() && (
         // Action: Cancel (Sender only if pending)
         (isOwner(existing().senderId) && existing().status == 'pending' && incoming().status == 'cancelled' 
          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
@@ -98,6 +104,42 @@ service cloud.firestore {
       return data.keys().hasAll(['senderId', 'text', 'timestamp'])
              && data.senderId == request.auth.uid
              && data.text is string && data.text.size() > 0 && data.text.size() <= 1000;
+    }
+
+    // --- Bus Counters ---
+    match /bus_counters/{counterId} {
+      allow read: if isSignedIn();
+      allow write: if isVerified() && isValidBusCounter(incoming());
+    }
+
+    function isValidBusCounter(data) {
+      return data.keys().hasAll(['name', 'companyName', 'location'])
+             && data.name is string && data.name.size() > 0
+             && data.companyName is string && data.companyName.size() > 0
+             && data.location.lat is number && data.location.lng is number;
+    }
+
+    // --- Bus Transports ---
+    match /bus_transports/{transportId} {
+      allow read: if isSignedIn();
+      allow create: if isVerified() && isValidBusTransport(incoming());
+      allow update: if isSignedIn() && (
+        (isOwner(existing().driverId) && isVerified() && isValidBusTransport(incoming())) ||
+        (incoming().diff(existing()).affectedKeys().hasOnly(['slots'])) // Support booking
+      );
+    }
+
+    // --- Connection Test ---
+    match /test/connection {
+      allow read: if true;
+    }
+
+    function isValidBusTransport(data) {
+      return data.keys().hasAll(['busNumber', 'companyName', 'route', 'driverId'])
+             && data.busNumber is string && data.busNumber.size() > 0
+             && data.companyName is string && data.companyName.size() > 0
+             && data.route is string && data.route.size() > 0
+             && data.driverId == request.auth.uid;
     }
   }
 }

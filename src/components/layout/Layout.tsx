@@ -12,6 +12,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   const navItems = [
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+    { label: 'Courier Hubs', path: '/hubs', icon: Navigation },
     { label: 'Tracking', path: '/tracking', icon: MapPin },
     { label: 'Support', path: '/support', icon: MessageCircle },
   ];
@@ -22,6 +23,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   if (role === 'driver') {
     navItems.splice(1, 0, { label: 'Active Routes', path: '/routes', icon: Navigation });
+    navItems.splice(2, 0, { label: 'Register Bus', path: '/register-transport', icon: Bus });
   }
 
   return (

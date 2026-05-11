@@ -6,6 +6,7 @@ import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, Badge, Button } from '../components/common/UI';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrors';
 import { Bus, MapPin, Navigation } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -168,14 +169,17 @@ export const Tracking = () => {
   useEffect(() => {
     if (!user || !role) return;
     
+    const deliveryPath = 'deliveries';
     const q = query(
-      collection(db, 'deliveries'),
+      collection(db, deliveryPath),
       where(role === 'customer' ? 'senderId' : 'driverId', '==', user.uid),
       where('status', 'in', ['accepted', 'picked_up', 'in_transit'])
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setActiveDeliveries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, deliveryPath);
     });
 
     return () => unsubscribe();
@@ -262,7 +266,10 @@ export const Tracking = () => {
                                <div className="w-8 h-8 bg-blue-600/10 rounded-lg flex items-center justify-center text-blue-400">
                                   <Bus size={16} />
                                </div>
-                               <span className="text-[10px] font-black text-white uppercase tracking-widest">{d.busRoute}</span>
+                               <div className="flex flex-col">
+                                 <span className="text-[10px] font-black text-white uppercase tracking-widest">{d.busRoute}</span>
+                                 {d.slotId && <span className="text-[8px] font-black text-blue-400 mt-0.5 tracking-widest">SLOT: {d.slotId}</span>}
+                               </div>
                             </div>
                             {etas[d.id] && (
                               <div className="flex items-center gap-2 text-blue-400">

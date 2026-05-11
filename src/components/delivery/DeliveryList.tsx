@@ -8,6 +8,7 @@ import { formatTime, formatDate } from '../../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import { handleFirestoreError, OperationType } from '../../lib/firestoreErrors';
 
 export const DeliveryList = () => {
   const { user, role } = useAuth();
@@ -18,34 +19,63 @@ export const DeliveryList = () => {
   useEffect(() => {
     if (!user || !role) return;
 
-    let q;
+    const deliveryPath = 'deliveries';
+    
     if (role === 'customer') {
-      q = query(
-        collection(db, 'deliveries'),
+      const q = query(
+        collection(db, deliveryPath),
         where('senderId', '==', user.uid),
         orderBy('createdAt', 'desc')
       );
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        setDeliveries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setLoading(false);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, deliveryPath);
+      });
+      return () => unsubscribe();
     } else {
-      // Driver sees pending to accept OR their own active ones
-      q = query(
-        collection(db, 'deliveries'),
-        orderBy('createdAt', 'desc')
+      // Driver needs to combine pending and their assigned deliveries
+      const pendingQuery = query(
+        collection(db, deliveryPath),
+        where('status', '==', 'pending')
       );
+      const myActiveQuery = query(
+        collection(db, deliveryPath),
+        where('driverId', '==', user.uid)
+      );
+
+      const unsubPending = onSnapshot(pendingQuery, (snapshot) => {
+        const pending = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setDeliveries(prev => {
+          const others = prev.filter(d => d.driverId === user.uid);
+          return [...others, ...pending].sort((a, b) => 
+            new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          );
+        });
+        setLoading(false);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, deliveryPath);
+      });
+
+      const unsubActive = onSnapshot(myActiveQuery, (snapshot) => {
+        const active = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setDeliveries(prev => {
+          const others = prev.filter(d => d.status === 'pending');
+          return [...others, ...active].sort((a, b) => 
+            new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          );
+        });
+        setLoading(false);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, deliveryPath);
+      });
+
+      return () => {
+        unsubPending();
+        unsubActive();
+      };
     }
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      if (role === 'driver') {
-        // Filter in memory for simplicity or use complex queries
-        setDeliveries(data.filter(d => d.status === 'pending' || d.driverId === user.uid));
-      } else {
-        setDeliveries(data);
-      }
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
   }, [user, role]);
 
   const updateStatus = async (deliveryId: string, newStatus: string) => {

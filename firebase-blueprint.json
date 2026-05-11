@@ -23,6 +23,10 @@
         "id": { "type": "string" },
         "senderId": { "type": "string" },
         "driverId": { "type": "string" },
+        "busTransportId": { "type": "string", "description": "ID of the specific bus assigned" },
+        "slotId": { "type": "string", "description": "Unique ID of the storage slot (1-40)" },
+        "price": { "type": "number", "description": "Calculated delivery fee" },
+        "helperCommission": { "type": "number", "description": "20% of the price intended for the helper" },
         "pickup": {
           "type": "object",
           "properties": {
@@ -70,6 +74,54 @@
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["senderId", "text", "timestamp"]
+    },
+    "BusCounter": {
+      "title": "BusCounter",
+      "description": "A physical bus counter serving as a hub.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "companyName": { "type": "string" },
+        "location": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" },
+            "address": { "type": "string" }
+          }
+        },
+        "contactNumber": { "type": "string" },
+        "managerId": { "type": "string" }
+      },
+      "required": ["name", "companyName", "location"]
+    },
+    "BusTransport": {
+      "title": "BusTransport",
+      "description": "A bus vehicle registered for courier service.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "busNumber": { "type": "string" },
+        "companyName": { "type": "string" },
+        "route": { "type": "string" },
+        "driverId": { "type": "string" },
+        "capacity": { "type": "number", "description": "Total slots, usually 40" },
+        "slots": { 
+          "type": "object", 
+          "description": "Map of slotId to status (available/booked/occupied)" 
+        },
+        "driverLocation": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" }
+          }
+        },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "registeredAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["busNumber", "companyName", "route", "driverId"]
     }
   },
   "firestore": {
@@ -84,6 +136,14 @@
     "/deliveries/{deliveryId}/messages/{messageId}": {
       "schema": "Message",
       "description": "Chat messages related to a specific delivery."
+    },
+    "/bus_counters/{counterId}": {
+      "schema": "BusCounter",
+      "description": "Locations of bus counters serving as hubs."
+    },
+    "/bus_transports/{transportId}": {
+      "schema": "BusTransport",
+      "description": "Registered bus vehicles for the courier network."
     }
   }
 }

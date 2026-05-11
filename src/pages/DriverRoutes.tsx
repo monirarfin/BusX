@@ -6,6 +6,7 @@ import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/f
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, Badge, Button } from '../components/common/UI';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrors';
 import { Bus, MapPin, Navigation, Package, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'react-hot-toast';
@@ -23,6 +24,12 @@ interface Delivery {
   id: string;
   senderId: string;
   driverId?: string;
+  busTransportId?: string;
+  slotId?: string;
+  price?: number;
+  helperCommission?: number;
+  pickupHubName?: string;
+  dropoffHubName?: string;
   status: 'pending' | 'accepted' | 'picked_up' | 'in_transit' | 'delivered' | 'cancelled';
   pickup: { lat: number; lng: number; address: string };
   dropoff: { lat: number; lng: number; address: string };
@@ -118,13 +125,14 @@ export const DriverRoutes = () => {
   useEffect(() => {
     if (!user) return;
     
+    const deliveryPath = 'deliveries';
     const statusQuery = query(
-      collection(db, 'deliveries'),
+      collection(db, deliveryPath),
       where('status', '==', 'pending')
     );
 
     const driverQuery = query(
-      collection(db, 'deliveries'),
+      collection(db, deliveryPath),
       where('driverId', '==', user.uid),
       where('status', 'in', ['accepted', 'picked_up', 'in_transit'])
     );
@@ -135,6 +143,8 @@ export const DriverRoutes = () => {
         const myTasks = prev.filter(d => d.driverId === user.uid);
         return [...myTasks, ...pendingData];
       });
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, deliveryPath);
     });
 
     const unsubDriver = onSnapshot(driverQuery, (snapshot) => {
@@ -143,6 +153,8 @@ export const DriverRoutes = () => {
         const othersPending = prev.filter(d => d.status === 'pending');
         return [...myData, ...othersPending];
       });
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, deliveryPath);
     });
 
     return () => {
@@ -151,15 +163,27 @@ export const DriverRoutes = () => {
     };
   }, [user]);
 
-  const acceptDelivery = async (id: string) => {
+  const acceptDelivery = async (id: string, busTransportId?: string, slotId?: string) => {
+    const deliveryPath = `deliveries/${id}`;
     try {
+      // 1. Accept parcel
       await updateDoc(doc(db, 'deliveries', id), {
         status: 'accepted',
         driverId: user?.uid,
         updatedAt: new Date().toISOString()
       });
-      toast.success('Task accepted!');
+
+      // 2. Confirm slot if applicable
+      if (busTransportId && slotId) {
+        const busRef = doc(db, 'bus_transports', busTransportId);
+        await updateDoc(busRef, {
+          [`slots.${slotId}`]: 'occupied'
+        });
+      }
+
+      toast.success('Parcel verified & Slot confirmed!');
     } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, deliveryPath);
       toast.error('Failed to accept');
     }
   };
@@ -218,29 +242,39 @@ export const DriverRoutes = () => {
                       selectedId === d.id ? "ring-2 ring-blue-500 bg-white/10" : ""
                     )}>
                        <div className="flex justify-between items-center mb-4">
-                          <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em]">#{d.id.slice(-6)}</p>
+                          <div className="flex flex-col">
+                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em]">#{d.id.slice(-6)}</p>
+                            {d.slotId && (
+                               <div className="flex items-center gap-2 mt-1">
+                                 <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest bg-blue-500/10 px-2 py-0.5 rounded-md">SLOT: {d.slotId}</span>
+                                 {d.helperCommission && (
+                                   <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest bg-emerald-500/10 px-2 py-0.5 rounded-md">EARN: ৳{d.helperCommission}</span>
+                                 )}
+                               </div>
+                            )}
+                          </div>
                           <Badge variant={d.status === 'pending' ? 'warning' : 'success'}>
-                            {d.status === 'pending' ? 'Potential' : 'Assigned'}
+                            {d.status === 'pending' ? 'Pending Counter' : 'Verified'}
                           </Badge>
                        </div>
                        
                        <div className="space-y-4 mb-6">
                           <div className="flex gap-3">
                              <MapPin size={16} className="text-blue-400 shrink-0" />
-                             <p className="text-xs text-white font-bold truncate">{d.pickup.address}</p>
+                             <p className="text-xs text-white font-bold truncate">{d.pickupHubName || d.pickup.address}</p>
                           </div>
                           <div className="flex gap-3">
                              <MapPin size={16} className="text-emerald-400 shrink-0" />
-                             <p className="text-xs text-secondary-white font-bold truncate">{d.dropoff.address}</p>
+                             <p className="text-xs text-secondary-white font-bold truncate">{d.dropoffHubName || d.dropoff.address}</p>
                           </div>
                        </div>
 
                        {d.status === 'pending' ? (
                          <Button 
-                            onClick={(e) => { e.stopPropagation(); acceptDelivery(d.id); }}
+                            onClick={(e) => { e.stopPropagation(); acceptDelivery(d.id, d.busTransportId, d.slotId); }}
                             className="w-full text-[10px] py-3 uppercase tracking-widest font-black"
                          >
-                            Accept Task
+                            Counter Check-in
                          </Button>
                        ) : (
                          <div className="flex items-center gap-2 text-blue-400 text-[10px] font-black uppercase tracking-widest">

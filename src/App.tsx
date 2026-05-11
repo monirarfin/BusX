@@ -1,12 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster, toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'motion/react';
 import { Bus, ArrowRight, Shield, Clock, MapPin, CheckCircle2 } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { signInWithGoogle } from './lib/firebase';
+import { signInWithGoogle, db } from './lib/firebase';
 import { Layout } from './components/layout/Layout';
 import { Button, Card } from './components/common/UI';
+import { doc, getDocFromServer } from 'firebase/firestore';
+
+// Connection Test
+const testConnection = async () => {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+    console.log("Firebase connection established.");
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message.includes('the client is offline')) {
+        console.error("Firebase is offline. Check your network.");
+      } else if (error.message.includes('permission-denied')) {
+        // This is actually okay for a connection test if the rule was restrictive,
+        // but we added a rule for it now.
+        console.log("Firebase connected (Permission verified).");
+      }
+    }
+  }
+};
 
 // Pages
 const Landing = () => {
@@ -191,8 +210,14 @@ import { Booking } from './pages/Booking';
 import { Tracking } from './pages/Tracking';
 import { Support } from './pages/Support';
 import { DriverRoutes } from './pages/DriverRoutes';
+import { RegisterTransport } from './pages/RegisterTransport';
+import { Hubs } from './pages/Hubs';
 
 export default function App() {
+  useEffect(() => {
+    testConnection();
+  }, []);
+
   return (
     <BrowserRouter>
       <AuthProvider>
@@ -203,6 +228,8 @@ export default function App() {
           <Route path="/book" element={<ProtectedRoute><Booking /></ProtectedRoute>} />
           <Route path="/routes" element={<ProtectedRoute><DriverRoutes /></ProtectedRoute>} />
           <Route path="/tracking" element={<ProtectedRoute><Tracking /></ProtectedRoute>} />
+          <Route path="/hubs" element={<ProtectedRoute><Hubs /></ProtectedRoute>} />
+          <Route path="/register-transport" element={<ProtectedRoute><RegisterTransport /></ProtectedRoute>} />
           <Route path="/support" element={<ProtectedRoute><Support /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
