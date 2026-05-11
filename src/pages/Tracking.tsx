@@ -63,7 +63,19 @@ const MapUpdater = ({ deliveries }: { deliveries: any[] }) => {
   return null;
 };
 
-const RoadRoute = ({ origin, destination, color = '#3b82f6', opacity = 0.4 }: { origin: any; destination: any; color?: string; opacity?: number }) => {
+const RoadRoute = ({ 
+  origin, 
+  destination, 
+  color = '#3b82f6', 
+  opacity = 0.4,
+  onEtaUpdate
+}: { 
+  origin: any; 
+  destination: any; 
+  color?: string; 
+  opacity?: number;
+  onEtaUpdate?: (duration: number) => void;
+}) => {
   const [positions, setPositions] = useState<[number, number][]>([]);
 
   useEffect(() => {
@@ -76,8 +88,12 @@ const RoadRoute = ({ origin, destination, color = '#3b82f6', opacity = 0.4 }: { 
         );
         const data = await response.json();
         if (data.routes && data.routes.length > 0) {
-          const coords = data.routes[0].geometry.coordinates.map((coord: any) => [coord[1], coord[0]]);
+          const route = data.routes[0];
+          const coords = route.geometry.coordinates.map((coord: any) => [coord[1], coord[0]]);
           setPositions(coords);
+          if (onEtaUpdate) {
+            onEtaUpdate(route.duration);
+          }
         } else {
           setPositions([[origin.lat, origin.lng], [destination.lat, destination.lng]]);
         }
@@ -88,14 +104,14 @@ const RoadRoute = ({ origin, destination, color = '#3b82f6', opacity = 0.4 }: { 
     };
 
     fetchRoute();
-  }, [origin.lat, origin.lng, destination.lat, destination.lng]);
+  }, [origin.lat, origin.lng, destination.lat, destination.lng, onEtaUpdate]);
 
   if (positions.length === 0) return null;
 
   return <Polyline positions={positions} color={color} weight={4} opacity={opacity} />;
 };
 
-const MapContent = ({ deliveries }: { deliveries: any[] }) => {
+const MapContent = ({ deliveries, onEtaUpdate }: { deliveries: any[]; onEtaUpdate: (id: string, duration: number) => void }) => {
   return (
     <>
       <MapUpdater deliveries={deliveries} />
@@ -114,7 +130,11 @@ const MapContent = ({ deliveries }: { deliveries: any[] }) => {
              />
            )}
            {d.pickup && d.dropoff && (
-             <RoadRoute origin={d.pickup} destination={d.dropoff} />
+             <RoadRoute 
+              origin={d.status === 'in_transit' && d.driverLocation ? d.driverLocation : d.pickup} 
+              destination={d.dropoff} 
+              onEtaUpdate={(duration) => onEtaUpdate(d.id, duration)}
+             />
            )}
            {d.driverLocation && (
              <Marker 
@@ -131,9 +151,22 @@ const MapContent = ({ deliveries }: { deliveries: any[] }) => {
 export const Tracking = () => {
   const { user, role } = useAuth();
   const [activeDeliveries, setActiveDeliveries] = useState<any[]>([]);
+  const [etas, setEtas] = useState<Record<string, number>>({});
+
+  const handleEtaUpdate = (id: string, duration: number) => {
+    setEtas(prev => ({ ...prev, [id]: duration }));
+  };
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.ceil(seconds / 60);
+    if (mins < 60) return `${mins} MINS`;
+    const hours = Math.floor(mins / 60);
+    const remainingMins = mins % 60;
+    return `${hours}H ${remainingMins}M`;
+  };
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !role) return;
     
     const q = query(
       collection(db, 'deliveries'),
@@ -192,7 +225,7 @@ export const Tracking = () => {
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 url="https://{s}.tile.osm.org/{z}/{x}/{y}.png"
               />
-              <MapContent deliveries={activeDeliveries} />
+              <MapContent deliveries={activeDeliveries} onEtaUpdate={handleEtaUpdate} />
             </MapContainer>
             
             {/* Overlay for "Glass" effect on map */}
@@ -224,11 +257,19 @@ export const Tracking = () => {
                           </div>
                        </div>
                        <div className="flex items-center justify-between pt-5 border-t border-white/5">
-                          <div className="flex items-center gap-3">
-                             <div className="w-8 h-8 bg-blue-600/10 rounded-lg flex items-center justify-center text-blue-400">
-                                <Bus size={16} />
-                             </div>
-                             <span className="text-[10px] font-black text-white uppercase tracking-widest">{d.busRoute}</span>
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-3">
+                               <div className="w-8 h-8 bg-blue-600/10 rounded-lg flex items-center justify-center text-blue-400">
+                                  <Bus size={16} />
+                               </div>
+                               <span className="text-[10px] font-black text-white uppercase tracking-widest">{d.busRoute}</span>
+                            </div>
+                            {etas[d.id] && (
+                              <div className="flex items-center gap-2 text-blue-400">
+                                <Bus size={12} className="animate-pulse" />
+                                <span className="text-[9px] font-black uppercase tracking-widest">Est. Time: {formatDuration(etas[d.id])}</span>
+                              </div>
+                            )}
                           </div>
                           <Button variant="ghost" className="px-3 py-1.5 h-auto text-[9px] uppercase tracking-widest font-black">Details</Button>
                        </div>

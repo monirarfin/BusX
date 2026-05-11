@@ -118,19 +118,37 @@ export const DriverRoutes = () => {
   useEffect(() => {
     if (!user) return;
     
-    // Show PENDING deliveries (potential) and deliveries assigned to THIS driver
-    const q = query(
+    const statusQuery = query(
       collection(db, 'deliveries'),
-      where('status', 'in', ['pending', 'accepted', 'picked_up', 'in_transit'])
+      where('status', '==', 'pending')
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Delivery));
-      // Filter in memory for specific driver visibility logic
-      setDeliveries(data.filter(d => d.status === 'pending' || d.driverId === user.uid));
+    const driverQuery = query(
+      collection(db, 'deliveries'),
+      where('driverId', '==', user.uid),
+      where('status', 'in', ['accepted', 'picked_up', 'in_transit'])
+    );
+
+    const unsubPending = onSnapshot(statusQuery, (snapshot) => {
+      const pendingData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Delivery));
+      setDeliveries(prev => {
+        const myTasks = prev.filter(d => d.driverId === user.uid);
+        return [...myTasks, ...pendingData];
+      });
     });
 
-    return () => unsubscribe();
+    const unsubDriver = onSnapshot(driverQuery, (snapshot) => {
+      const myData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Delivery));
+      setDeliveries(prev => {
+        const othersPending = prev.filter(d => d.status === 'pending');
+        return [...myData, ...othersPending];
+      });
+    });
+
+    return () => {
+      unsubPending();
+      unsubDriver();
+    };
   }, [user]);
 
   const acceptDelivery = async (id: string) => {
