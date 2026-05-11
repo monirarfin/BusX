@@ -149,10 +149,29 @@ const MapContent = ({ deliveries, onEtaUpdate }: { deliveries: any[]; onEtaUpdat
   );
 };
 
+interface Delivery {
+  id: string;
+  senderId: string;
+  driverId?: string;
+  busTransportId?: string;
+  status: string;
+  pickup: { lat: number; lng: number; address: string };
+  dropoff: { lat: number; lng: number; address: string };
+  driverLocation?: { lat: number; lng: number };
+  busRoute?: string;
+  slotId?: string;
+}
+
 export const Tracking = () => {
   const { user, role } = useAuth();
-  const [activeDeliveries, setActiveDeliveries] = useState<any[]>([]);
+  const [activeDeliveries, setActiveDeliveries] = useState<Delivery[]>([]);
+  const [busLocations, setBusLocations] = useState<Record<string, { lat: number; lng: number }>>({});
   const [etas, setEtas] = useState<Record<string, number>>({});
+
+  const deliveriesWithLocations = activeDeliveries.map(d => ({
+    ...d,
+    driverLocation: (d.busTransportId ? busLocations[d.busTransportId] : undefined) || d.driverLocation
+  }));
 
   const handleEtaUpdate = (id: string, duration: number) => {
     setEtas(prev => ({ ...prev, [id]: duration }));
@@ -177,7 +196,32 @@ export const Tracking = () => {
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setActiveDeliveries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const deliveries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Delivery));
+      setActiveDeliveries(deliveries);
+      
+      // Get unique bus transport IDs to listen to
+      const busIds = Array.from(new Set(deliveries.map(d => d.busTransportId).filter(Boolean)));
+      
+      if (busIds.length > 0) {
+        const busPath = 'bus_transports';
+        const busQ = query(
+          collection(db, busPath),
+          where('__name__', 'in', busIds)
+        );
+        
+        const busUnsubscribe = onSnapshot(busQ, (busSnapshot) => {
+          const locations: Record<string, any> = {};
+          busSnapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if (data.driverLocation) {
+              locations[doc.id] = data.driverLocation;
+            }
+          });
+          setBusLocations(locations);
+        });
+        
+        return () => busUnsubscribe();
+      }
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, deliveryPath);
     });
@@ -229,7 +273,7 @@ export const Tracking = () => {
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 url="https://{s}.tile.osm.org/{z}/{x}/{y}.png"
               />
-              <MapContent deliveries={activeDeliveries} onEtaUpdate={handleEtaUpdate} />
+              <MapContent deliveries={deliveriesWithLocations} onEtaUpdate={handleEtaUpdate} />
             </MapContainer>
             
             {/* Overlay for "Glass" effect on map */}
@@ -237,9 +281,9 @@ export const Tracking = () => {
          </div>
 
          <div className="space-y-6 overflow-y-auto pr-2 custom-scrollbar">
-            <h3 className="font-black text-white px-1 tracking-tight">Active Shipments ({activeDeliveries.length})</h3>
+            <h3 className="font-black text-white px-1 tracking-tight">Active Shipments ({deliveriesWithLocations.length})</h3>
             <AnimatePresence>
-               {activeDeliveries.map(d => (
+               {deliveriesWithLocations.map(d => (
                   <motion.div 
                     key={d.id}
                     initial={{ opacity: 0, x: 20 }}
@@ -283,7 +327,7 @@ export const Tracking = () => {
                     </Card>
                   </motion.div>
                ))}
-               {activeDeliveries.length === 0 && (
+               {deliveriesWithLocations.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-20 text-center glass rounded-3xl border-dashed border-white/10">
                      <Bus className="text-slate-700 mb-4" size={40} />
                      <p className="text-slate-500 text-xs font-black uppercase tracking-widest px-8 leading-relaxed">No shipments currently in transit.</p>

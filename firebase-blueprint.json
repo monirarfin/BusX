@@ -22,8 +22,8 @@
       "properties": {
         "id": { "type": "string" },
         "senderId": { "type": "string" },
-        "driverId": { "type": "string" },
-        "busTransportId": { "type": "string", "description": "ID of the specific bus assigned" },
+        "driverId": { "type": "string", "description": "Current assigned driver/helper UID" },
+        "busTransportId": { "type": "string", "description": "Current assigned bus ID" },
         "slotId": { "type": "string", "description": "Unique ID of the storage slot (1-40)" },
         "price": { "type": "number", "description": "Calculated delivery fee" },
         "helperCommission": { "type": "number", "description": "20% of the price intended for the helper" },
@@ -45,8 +45,10 @@
         },
         "status": {
           "type": "string",
-          "enum": ["pending", "accepted", "picked_up", "in_transit", "delivered", "cancelled"]
+          "enum": ["pending", "accepted", "picked_up", "in_transit", "at_hub", "delivered", "cancelled"]
         },
+        "currentHubId": { "type": "string", "description": "ID of the hub if waitng for transfer" },
+        "targetHubId": { "type": "string", "description": "Final destination hub ID" },
         "busRoute": { "type": "string" },
         "parcelDetails": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
@@ -106,10 +108,12 @@
         "companyName": { "type": "string" },
         "route": { "type": "string" },
         "driverId": { "type": "string" },
-        "capacity": { "type": "number", "description": "Total slots, usually 40" },
+        "helperName": { "type": "string" },
+        "helperPhone": { "type": "string" },
+        "capacity": { "type": "number", "description": "Total storage slots (default: 40)" },
         "slots": { 
           "type": "object", 
-          "description": "Map of slotId to status (available/booked/occupied)" 
+          "description": "Map of SLOT-XX to status ('available' | 'booked' | 'occupied')" 
         },
         "driverLocation": {
           "type": "object",

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { addDoc, collection, onSnapshot, query, orderBy, where, doc, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, onSnapshot, query, orderBy, where, doc, updateDoc, runTransaction } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, Button, Badge } from '../common/UI';
@@ -24,30 +24,85 @@ interface BusTransport {
   route: string;
   slots: Record<string, 'available' | 'booked' | 'occupied'>;
   driverLocation?: { lat: number; lng: number };
+  gpsEnabled?: boolean;
 }
 
 const SlotGrid = ({ slots, selectedSlot, onSelect }: { slots: Record<string, string>, selectedSlot: string, onSelect: (id: string) => void }) => {
+  const sortedSlots = Object.entries(slots).sort();
+  const freeSlotsCount = Object.values(slots).filter(s => s === 'available').length;
+  
   return (
-    <div className="grid grid-cols-5 sm:grid-cols-8 gap-2 mt-4">
-      {Object.entries(slots).sort().map(([id, status]) => (
-        <button
-          key={id}
-          type="button"
-          disabled={status !== 'available'}
-          onClick={() => onSelect(id)}
-          className={cn(
-            "aspect-square rounded-lg flex flex-col items-center justify-center transition-all border text-[10px] font-black",
-            status === 'available' 
-              ? id === selectedSlot 
-                ? "bg-blue-600 border-blue-400 text-white shadow-lg shadow-blue-600/30 ring-2 ring-blue-400/50 scale-105 z-10" 
-                : "bg-slate-900/40 border-white/10 text-slate-500 hover:border-blue-500/50 hover:bg-blue-500/5"
-              : "bg-slate-950/20 border-white/5 text-slate-800 cursor-not-allowed opacity-40"
-          )}
-        >
-          <span className="opacity-60">{id.replace('SLOT-', '')}</span>
-          {status === 'available' && id === selectedSlot && <CheckCircle2 size={10} className="mt-1" />}
-        </button>
-      ))}
+    <div className="relative p-10 bg-slate-950/50 rounded-[3rem] border border-white/5 shadow-inner">
+      <div className="absolute -top-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1">
+         <div className="bg-blue-600 px-6 py-1.5 rounded-full text-[8px] font-black uppercase tracking-[0.3em] text-white shadow-lg shadow-blue-600/20">
+            Front of Bus
+         </div>
+         <div className="w-12 h-1 bg-blue-600/20 rounded-full" />
+      </div>
+
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+           <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+           <span className="text-[10px] font-black text-emerald-500/80 uppercase tracking-widest">
+             {freeSlotsCount} Available Slots
+           </span>
+        </div>
+        <div className="text-[8px] font-bold text-slate-600 uppercase tracking-[0.2em]">Storage Layout</div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-x-2 gap-y-3">
+        {sortedSlots.map(([id, status], index) => {
+          const rowIndex = Math.floor(index / 4);
+          const colIndex = index % 4;
+          const gridPos = colIndex >= 2 ? colIndex + 1 : colIndex;
+          
+          return (
+            <button
+              key={id}
+              type="button"
+              disabled={status !== 'available'}
+              onClick={() => onSelect(id)}
+              style={{ gridColumnStart: gridPos + 1 }}
+              className={cn(
+                "aspect-square rounded-xl flex flex-col items-center justify-center transition-all border text-[10px] font-black relative group",
+                status === 'available' 
+                  ? id === selectedSlot 
+                    ? "bg-blue-600 border-blue-400 text-white shadow-xl shadow-blue-600/30 scale-110 z-10" 
+                    : "bg-slate-900/60 border-white/10 text-slate-400 hover:border-blue-500/50 hover:bg-blue-500/5 hover:scale-105"
+                  : "bg-slate-950 border-white/5 text-slate-800 cursor-not-allowed opacity-30"
+              )}
+            >
+              <span className="opacity-60">{id.replace('SLOT-', '')}</span>
+              {status === 'available' && id === selectedSlot && <CheckCircle2 size={12} className="mt-1 animate-in zoom-in" />}
+              
+              {status === 'available' && (
+                <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-slate-950 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity z-20" />
+              )}
+
+              {(status === 'booked' || status === 'occupied') && (
+                <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-slate-950 shadow-sm z-20" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-10 pt-6 border-t border-white/5 flex justify-center gap-6">
+         <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-md bg-blue-600" />
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Selected</span>
+         </div>
+         <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-md bg-slate-900 border border-white/10" />
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Available</span>
+         </div>
+         <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-md bg-slate-950 border border-white/5 opacity-30 relative overflow-hidden">
+               <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-rose-500 rounded-full" />
+            </div>
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Booked</span>
+         </div>
+      </div>
     </div>
   );
 };
@@ -64,11 +119,71 @@ const calculateDistance = (p1: {lat: number, lng: number}, p2: {lat: number, lng
   return R * c * 1.35; // Road distance factor
 };
 
+import confetti from 'canvas-confetti';
+
+const SuccessView = ({ slotId, onFinish }: { slotId: string, onFinish: () => void }) => {
+  useEffect(() => {
+    const duration = 5 * 1000;
+    const animationEnd = Date.now() + duration;
+    const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+
+    const randomInRange = (min: number, max: number) => {
+      return Math.random() * (max - min) + min;
+    }
+
+    const interval: any = setInterval(function() {
+      const timeLeft = animationEnd - Date.now();
+
+      if (timeLeft <= 0) {
+        return clearInterval(interval);
+      }
+
+      const particleCount = 50 * (timeLeft / duration);
+      confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
+      confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
+    }, 250);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="py-12 flex flex-col items-center text-center space-y-6"
+    >
+      <div className="w-24 h-24 bg-emerald-500 rounded-full flex items-center justify-center text-white shadow-2xl shadow-emerald-500/40 animate-bounce">
+         <CheckCircle2 size={48} />
+      </div>
+      <div className="space-y-2">
+        <h2 className="text-3xl font-black text-white tracking-tight">Parcel Booked!</h2>
+        <p className="text-slate-400 font-medium">Your slot <span className="text-blue-400 font-black">{slotId}</span> has been successfully reserved.</p>
+      </div>
+      <div className="bg-white/5 border border-white/10 rounded-3xl p-6 w-full max-w-sm">
+         <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-500 mb-4">
+            <span>Booking Status</span>
+            <Badge variant="success">Confirmed</Badge>
+         </div>
+         <p className="text-xs text-slate-300 leading-relaxed">
+           Please reach the pickup hub 30 minutes before the bus arrival time for parcel handover and tagging.
+         </p>
+      </div>
+      <Button 
+        onClick={onFinish}
+        className="w-full py-5 rounded-2xl text-lg font-black tracking-tighter shadow-xl shadow-blue-600/20"
+      >
+        GO TO DASHBOARD
+      </Button>
+    </motion.div>
+  );
+};
+
 export const BookingForm = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
+  const [isSuccess, setIsSuccess] = useState(false);
   const [hubs, setHubs] = useState<Hub[]>([]);
   const [incomingBuses, setIncomingBuses] = useState<BusTransport[]>([]);
   const [distance, setDistance] = useState(0);
@@ -144,36 +259,57 @@ export const BookingForm = () => {
     setLoading(true);
     const deliveryPath = 'deliveries';
     try {
-      // 1. Create delivery record
-      await addDoc(collection(db, deliveryPath), {
-        senderId: user.uid,
-        driverId: selectedBus.driverId, // The supervisor/helper in charge
-        busTransportId: selectedBus.id,
-        slotId: formData.slotId,
-        price: price,
-        helperCommission: price * 0.2, // 20% commission
-        status: 'pending',
-        pickup: pickupHub.location,
-        dropoff: dropoffHub.location,
-        pickupHubName: `${pickupHub.companyName} - ${pickupHub.name}`,
-        dropoffHubName: `${dropoffHub.companyName} - ${dropoffHub.name}`,
-        parcelDetails: formData.parcelDetails,
-        busRoute: selectedBus.route,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+      await runTransaction(db, async (transaction) => {
+        // 1. Check if the slot is still available
+        const busRef = doc(db, 'bus_transports', selectedBus.id);
+        const busDoc = await transaction.get(busRef);
+        
+        if (!busDoc.exists()) {
+          throw new Error("Bus not found");
+        }
+
+        const busData = busDoc.data();
+        const currentSlots = busData.slots || {};
+        
+        if (currentSlots[formData.slotId] !== 'available') {
+          throw new Error("This slot was just booked by someone else. Please select another slot.");
+        }
+
+        // 2. Create delivery record
+        const deliveryRef = doc(collection(db, deliveryPath));
+        transaction.set(deliveryRef, {
+          senderId: user.uid,
+          driverId: selectedBus.driverId,
+          busTransportId: selectedBus.id,
+          slotId: formData.slotId,
+          price: price,
+          helperCommission: price * 0.2,
+          status: 'pending',
+          pickup: pickupHub.location,
+          dropoff: dropoffHub.location,
+          pickupHubName: `${pickupHub.companyName} - ${pickupHub.name}`,
+          dropoffHubName: `${dropoffHub.companyName} - ${dropoffHub.name}`,
+          targetHubId: dropoffHub.id,
+          parcelDetails: formData.parcelDetails,
+          busRoute: selectedBus.route,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+
+        // 3. Mark slot as booked on bus
+        transaction.update(busRef, {
+          [`slots.${formData.slotId}`]: 'booked'
+        });
       });
 
-      // 2. Mark slot as booked on bus
-      const busRef = doc(db, 'bus_transports', selectedBus.id);
-      await updateDoc(busRef, {
-        [`slots.${formData.slotId}`]: 'booked'
-      });
-
-      toast.success('Successfully booked slot ' + formData.slotId);
-      navigate('/dashboard');
+      setIsSuccess(true);
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, deliveryPath);
-      toast.error('Failed to book parcel.');
+      if (error instanceof Error && error.message.includes("This slot was just booked")) {
+         toast.error(error.message);
+      } else {
+         handleFirestoreError(error, OperationType.WRITE, deliveryPath);
+         toast.error('Failed to book parcel.');
+      }
     } finally {
       setLoading(false);
     }
@@ -190,22 +326,34 @@ export const BookingForm = () => {
               <div>
                  <h2 className="text-3xl font-black text-white tracking-tighter flex items-center gap-3">
                     <Bus size={36} />
-                    BOX <span className="text-blue-200 uppercase">Storage</span>
+                    {isSuccess ? 'BOOKING COMPLETE' : 'BOX STORAGE'}
                  </h2>
-                 <p className="text-blue-100/60 text-xs font-bold uppercase tracking-widest mt-1">Select Bus & Your Preferred Slot</p>
+                 <p className="text-blue-100/60 text-xs font-bold uppercase tracking-widest mt-1">
+                   {isSuccess ? 'Thank you for choosing BusX' : 'Select Bus & Your Preferred Slot'}
+                 </p>
               </div>
               <div className="flex gap-2">
-                {[1, 2, 3].map(s => (
-                  <div key={s} className={cn("h-2 rounded-full transition-all duration-500", step >= s ? "w-8 bg-white shadow-lg" : "w-4 bg-white/20")} />
-                ))}
+                {isSuccess ? (
+                  <div className="bg-white px-4 py-1.5 rounded-full">
+                    <Badge variant="success">SUCCESS</Badge>
+                  </div>
+                ) : (
+                  [1, 2, 3].map(s => (
+                    <div key={s} className={cn("h-2 rounded-full transition-all duration-500", step >= s ? "w-8 bg-white shadow-lg" : "w-4 bg-white/20")} />
+                  ))
+                )}
               </div>
            </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-10 space-y-8">
+        <div className="p-10 space-y-8">
            <AnimatePresence mode="wait">
-              {step === 1 && (
-                <motion.div 
+              {isSuccess ? (
+                <SuccessView slotId={formData.slotId} onFinish={() => navigate('/dashboard')} />
+              ) : (
+                <form onSubmit={handleSubmit}>
+                  {step === 1 && (
+                    <motion.div 
                   key="step1"
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -322,7 +470,16 @@ export const BookingForm = () => {
                         ) : (
                           incomingBuses.map(bus => {
                             const freeSlots = Object.values(bus.slots).filter(s => s === 'available').length;
-                            const isIncoming = true; // Simulation
+                            const pickupHub = hubs.find(h => h.id === formData.pickupHubId);
+                            let liveDistance = null;
+                            let etaMins = null;
+
+                            if (bus.gpsEnabled && bus.driverLocation && pickupHub) {
+                              liveDistance = calculateDistance(bus.driverLocation, pickupHub.location);
+                              // Assuming avg speed of 30km/h
+                              etaMins = Math.round((liveDistance / 30) * 60);
+                            }
+
                             return (
                                <button
                                  key={bus.id}
@@ -335,10 +492,13 @@ export const BookingForm = () => {
                                      : "bg-white/5 border-white/5 hover:border-white/10"
                                  )}
                                >
-                                 {isIncoming && (
-                                   <div className="absolute top-0 right-0 py-1 px-4 bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest rounded-bl-xl flex items-center gap-1">
-                                      <div className="w-1 h-1 bg-white rounded-full animate-ping" />
-                                      Incoming 15m
+                                 {etaMins !== null && (
+                                   <div className={cn(
+                                     "absolute top-0 right-0 py-1 px-4 text-white text-[8px] font-black uppercase tracking-widest rounded-bl-xl flex items-center gap-1",
+                                     etaMins <= 60 ? "bg-emerald-500" : "bg-blue-500/50"
+                                   )}>
+                                      <div className={cn("w-1 h-1 bg-white rounded-full", etaMins <= 60 ? "animate-ping" : "")} />
+                                      {etaMins <= 60 ? `Arriving in ${etaMins}m` : `${Math.floor(etaMins/60)}h away`}
                                    </div>
                                  )}
                                  <div className="flex flex-col gap-4">
@@ -347,7 +507,12 @@ export const BookingForm = () => {
                                          <Bus size={20} />
                                       </div>
                                       <div>
-                                         <p className="text-[9px] font-black uppercase tracking-widest opacity-60 m-0">{bus.companyName}</p>
+                                         <div className="flex items-center gap-2">
+                                            <p className="text-[9px] font-black uppercase tracking-widest opacity-60 m-0">{bus.companyName}</p>
+                                            {liveDistance !== null && (
+                                              <span className="text-[8px] font-black text-blue-400 bg-blue-500/10 px-1.5 rounded">{liveDistance.toFixed(1)} km away</span>
+                                            )}
+                                         </div>
                                          <h4 className="font-black text-lg tracking-tight m-0">{bus.busNumber}</h4>
                                       </div>
                                    </div>
@@ -445,7 +610,7 @@ export const BookingForm = () => {
                                      <p className="text-xl font-black text-white m-0 tracking-tighter">{formData.slotId}</p>
                                   </div>
                                </div>
-                               <Badge className="bg-white text-blue-600 font-black px-4 py-1.5 rounded-full">CONFIRMED</Badge>
+                               <Badge variant="success">CONFIRMED</Badge>
                             </motion.div>
                           )}
                         </AnimatePresence>
@@ -475,8 +640,10 @@ export const BookingForm = () => {
                    </div>
                 </motion.div>
               )}
-           </AnimatePresence>
-        </form>
+            </form>
+          )}
+        </AnimatePresence>
+      </div>
         
         <div className="px-10 pb-10 flex items-center gap-2 opacity-40 grayscale pointer-events-none">
            <ShieldCheck size={14} className="text-blue-400" />

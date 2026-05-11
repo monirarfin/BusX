@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { MapPin, Phone, Building2, Plus, X, Search, Navigation, Building, LocateFixed, Eye } from 'lucide-react';
 import { collection, onSnapshot, addDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { useAuth } from '../contexts/AuthContext';
 import { Button, Card } from '../components/common/UI';
 import { toast } from 'react-hot-toast';
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrors';
@@ -60,6 +61,7 @@ const LocationPicker = ({ lat, lng, onChange }: { lat: number, lng: number, onCh
 };
 
 export const Hubs = () => {
+  const { user } = useAuth();
   const [hubs, setHubs] = useState<Hub[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [search, setSearch] = useState('');

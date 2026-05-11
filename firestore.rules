@@ -57,7 +57,7 @@ service cloud.firestore {
       allow list: if isSignedIn() && (
         ( 'senderId' in resource.data && resource.data.senderId == request.auth.uid ) ||
         ( 'driverId' in resource.data && resource.data.driverId == request.auth.uid ) ||
-        ( 'status' in resource.data && resource.data.status == 'pending' )
+        ( 'status' in resource.data && resource.data.status in ['pending', 'at_hub'] )
       );
       
       allow create: if isVerified() && isValidDelivery(incoming()) 
@@ -68,21 +68,27 @@ service cloud.firestore {
         (isOwner(existing().senderId) && existing().status == 'pending' && incoming().status == 'cancelled' 
          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
         
-        // Action: Accept (Driver only if pending)
-        (existing().status == 'pending' && incoming().status == 'accepted' 
+        // Action: Accept (Driver only if pending or at_hub)
+        (existing().status in ['pending', 'at_hub'] && incoming().status == 'accepted' 
          && incoming().driverId == request.auth.uid
-         && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'driverId', 'updatedAt'])) ||
+         && (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'driverId', 'updatedAt']) || 
+             incoming().diff(existing()).affectedKeys().hasOnly(['status', 'driverId', 'updatedAt', 'currentHubId']))) ||
          
         // Action: Update Status (Assigned Driver only)
         (isOwner(existing().driverId) && incoming().status in ['picked_up', 'in_transit', 'delivered']
-         && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+         && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+
+        // Action: Handover to Hub (Assigned Driver only)
+        (isOwner(existing().driverId) && incoming().status == 'at_hub'
+         && incoming().driverId == null
+         && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'driverId', 'currentHubId', 'updatedAt']))
       );
     }
 
     function isValidDelivery(data) {
       return data.keys().hasAll(['senderId', 'pickup', 'dropoff', 'status'])
              && data.senderId is string
-             && data.status in ['pending', 'accepted', 'picked_up', 'in_transit', 'delivered', 'cancelled', 'cancelled']
+             && data.status in ['pending', 'accepted', 'picked_up', 'in_transit', 'delivered', 'cancelled', 'at_hub']
              && data.pickup.lat is number && data.pickup.lng is number
              && data.dropoff.lat is number && data.dropoff.lng is number;
     }
