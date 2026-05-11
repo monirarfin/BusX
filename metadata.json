@@ -1,0 +1,6 @@
+{
+  "name": "BusX Courier",
+  "description": "Instant document delivery via public transport buses with real-time tracking and smart support.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["real-time-tracking", "ai-chat-support"]
+}

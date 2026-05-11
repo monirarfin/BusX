@@ -1,0 +1,103 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function emailVerified() {
+      return request.auth.token.email_verified == true;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Users Collection ---
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidUser(incoming()) 
+                     && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'phoneNumber', 'role']);
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role'])
+             && data.uid == request.auth.uid
+             && data.email is string && data.email.size() > 0
+             && data.role in ['customer', 'driver'];
+    }
+
+    // --- Deliveries Collection ---
+    match /deliveries/{deliveryId} {
+      allow read: if isSignedIn() && (
+        isOwner(existing().senderId) || 
+        isOwner(existing().driverId) ||
+        existing().status == 'pending' // Drivers can see pending to accept
+      );
+      
+      allow create: if isSignedIn() && isValidDelivery(incoming()) 
+                    && isOwner(incoming().senderId);
+                    
+      allow update: if isSignedIn() && (
+        // Action: Cancel (Sender only if pending)
+        (isOwner(existing().senderId) && existing().status == 'pending' && incoming().status == 'cancelled' 
+         && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+        
+        // Action: Accept (Driver only if pending)
+        (existing().status == 'pending' && incoming().status == 'accepted' 
+         && incoming().driverId == request.auth.uid
+         && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'driverId', 'updatedAt'])) ||
+         
+        // Action: Update Status (Assigned Driver only)
+        (isOwner(existing().driverId) && incoming().status in ['picked_up', 'in_transit', 'delivered']
+         && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+      );
+    }
+
+    function isValidDelivery(data) {
+      return data.keys().hasAll(['senderId', 'pickup', 'dropoff', 'status'])
+             && data.senderId is string
+             && data.status in ['pending', 'accepted', 'picked_up', 'in_transit', 'delivered', 'cancelled', 'cancelled']
+             && data.pickup.lat is number && data.pickup.lng is number
+             && data.dropoff.lat is number && data.dropoff.lng is number;
+    }
+
+    // --- Messages Subcollection ---
+    match /deliveries/{deliveryId}/messages/{messageId} {
+      allow read: if isSignedIn() && (
+        isOwner(get(/databases/$(database)/documents/deliveries/$(deliveryId)).data.senderId) ||
+        isOwner(get(/databases/$(database)/documents/deliveries/$(deliveryId)).data.driverId)
+      );
+      
+      allow create: if isSignedIn() && (
+        isOwner(get(/databases/$(database)/documents/deliveries/$(deliveryId)).data.senderId) ||
+        isOwner(get(/databases/$(database)/documents/deliveries/$(deliveryId)).data.driverId)
+      ) && isValidMessage(incoming());
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['senderId', 'text', 'timestamp'])
+             && data.senderId == request.auth.uid
+             && data.text is string && data.text.size() > 0 && data.text.size() <= 1000;
+    }
+  }
+}

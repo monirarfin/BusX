@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Represents a user of the system (Customer or Driver).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["customer", "driver"] },
+        "phoneNumber": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Delivery": {
+      "title": "Delivery",
+      "description": "Represents a delivery request/fulfillment.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "driverId": { "type": "string" },
+        "pickup": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" },
+            "address": { "type": "string" }
+          }
+        },
+        "dropoff": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number" },
+            "lng": { "type": "number" },
+            "address": { "type": "string" }
+          }
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "accepted", "picked_up", "in_transit", "delivered", "cancelled"]
+        },
+        "busRoute": { "type": "string" },
+        "parcelDetails": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "pickup", "dropoff", "status"]
+    },
+    "ChatRoom": {
+      "title": "ChatRoom",
+      "description": "A chat room for a specific delivery.",
+      "type": "object",
+      "properties": {
+        "deliveryId": { "type": "string" },
+        "participants": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["deliveryId", "participants"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A single message in a chat room.",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "text", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Storage for user profile information."
+    },
+    "/deliveries/{deliveryId}": {
+      "schema": "Delivery",
+      "description": "Storage for delivery requests and state."
+    },
+    "/deliveries/{deliveryId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Chat messages related to a specific delivery."
+    }
+  }
+}
