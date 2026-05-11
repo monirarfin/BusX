@@ -63,6 +63,38 @@ const MapUpdater = ({ deliveries }: { deliveries: any[] }) => {
   return null;
 };
 
+const RoadRoute = ({ origin, destination, color = '#3b82f6', opacity = 0.4 }: { origin: any; destination: any; color?: string; opacity?: number }) => {
+  const [positions, setPositions] = useState<[number, number][]>([]);
+
+  useEffect(() => {
+    if (!origin || !destination) return;
+
+    const fetchRoute = async () => {
+      try {
+        const response = await fetch(
+          `https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson`
+        );
+        const data = await response.json();
+        if (data.routes && data.routes.length > 0) {
+          const coords = data.routes[0].geometry.coordinates.map((coord: any) => [coord[1], coord[0]]);
+          setPositions(coords);
+        } else {
+          setPositions([[origin.lat, origin.lng], [destination.lat, destination.lng]]);
+        }
+      } catch (error) {
+        console.error("OSRM error:", error);
+        setPositions([[origin.lat, origin.lng], [destination.lat, destination.lng]]);
+      }
+    };
+
+    fetchRoute();
+  }, [origin.lat, origin.lng, destination.lat, destination.lng]);
+
+  if (positions.length === 0) return null;
+
+  return <Polyline positions={positions} color={color} weight={4} opacity={opacity} />;
+};
+
 const MapContent = ({ deliveries }: { deliveries: any[] }) => {
   return (
     <>
@@ -82,15 +114,7 @@ const MapContent = ({ deliveries }: { deliveries: any[] }) => {
              />
            )}
            {d.pickup && d.dropoff && (
-             <Polyline 
-               positions={[
-                 [d.pickup.lat, d.pickup.lng],
-                 [d.dropoff.lat, d.dropoff.lng]
-               ]} 
-               color="#3b82f6" 
-               weight={3} 
-               opacity={0.4} 
-             />
+             <RoadRoute origin={d.pickup} destination={d.dropoff} />
            )}
            {d.driverLocation && (
              <Marker 
