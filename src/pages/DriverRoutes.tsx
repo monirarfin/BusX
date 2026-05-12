@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { collection, query, where, onSnapshot, doc, updateDoc, runTransaction } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, runTransaction, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, Badge, Button } from '../components/common/UI';
@@ -211,6 +211,26 @@ export const DriverRoutes = () => {
   const [showTrackingConfirm, setShowTrackingConfirm] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showHubs, setShowHubs] = useState(false);
+  const [announcedHubs, setAnnouncedHubs] = useState<Set<string>>(new Set());
+  const [prefs, setPrefs] = useState<any>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchPrefs = async () => {
+      const docSnap = await getDoc(doc(db, 'user_preferences', user.uid));
+      if (docSnap.exists()) setPrefs(docSnap.data());
+    };
+    fetchPrefs();
+  }, [user]);
+
+  const speak = (text: string) => {
+    if (!('speechSynthesis' in window) || (prefs && prefs.voiceNotifications === false)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'bn-BD';
+    utterance.rate = 0.9;
+    window.speechSynthesis.speak(utterance);
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -277,6 +297,30 @@ export const DriverRoutes = () => {
         const { latitude, longitude } = position.coords;
         setDriverLocation({ lat: latitude, lng: longitude });
         try {
+          // Proximity Voice Alert Logic
+          if (optimizedTasks.length > 0) {
+            const nextTask = optimizedTasks[0];
+            const distance = getDistance({ lat: latitude, lng: longitude }, nextTask.location);
+            
+            const locationKey = `${nextTask.location.lat.toFixed(4)},${nextTask.location.lng.toFixed(4)}`;
+            
+            if (distance <= 4 && !announcedHubs.has(locationKey)) {
+              const sameLocationTasks = optimizedTasks.filter(t => 
+                getDistance(t.location, nextTask.location) < 0.1
+              );
+              const pickupCount = sameLocationTasks.filter(t => t.type === 'pickup').length;
+              const dropoffCount = sameLocationTasks.filter(t => t.type === 'dropoff').length;
+              
+              let msg = `সামনের হাবে `;
+              if (dropoffCount > 0) msg += `${dropoffCount}টি পার্সেল নামাতে হবে `;
+              if (pickupCount > 0) msg += `${dropoffCount > 0 ? 'এবং ' : ''}${pickupCount}টি পার্সেল বাসে তুলতে হবে।`;
+              
+              speak(msg);
+              setAnnouncedHubs(prev => new Set(prev).add(locationKey));
+              toast.success(`Voice Alert: ${msg}`, { duration: 5000 });
+            }
+          }
+
           await updateDoc(doc(db, 'bus_transports', activeBusId), {
             driverLocation: { lat: latitude, lng: longitude },
             lastGpsSync: new Date().toISOString()

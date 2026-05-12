@@ -212,6 +212,7 @@ import { Support } from './pages/Support';
 import { DriverRoutes } from './pages/DriverRoutes';
 import { RegisterTransport } from './pages/RegisterTransport';
 import { Hubs } from './pages/Hubs';
+import { Profile } from './pages/Profile';
 
 export default function App() {
   useEffect(() => {
@@ -230,6 +231,7 @@ export default function App() {
           <Route path="/tracking" element={<ProtectedRoute><Tracking /></ProtectedRoute>} />
           <Route path="/hubs" element={<ProtectedRoute><Hubs /></ProtectedRoute>} />
           <Route path="/register-transport" element={<ProtectedRoute><RegisterTransport /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/support" element={<ProtectedRoute><Support /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

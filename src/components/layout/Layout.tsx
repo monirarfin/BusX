@@ -14,6 +14,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { label: 'Courier Hubs', path: '/hubs', icon: Navigation },
     { label: 'Tracking', path: '/tracking', icon: MapPin },
+    { label: 'Profile', path: '/profile', icon: User },
     { label: 'Support', path: '/support', icon: MessageCircle },
   ];
 

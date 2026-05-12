@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Card, Badge, Button } from '../components/common/UI';
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrors';
 import { Bus, MapPin, Navigation } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { toast } from 'react-hot-toast';
 
 // Fix for default Leaflet icon paths in Vite
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -162,11 +163,33 @@ interface Delivery {
   slotId?: string;
 }
 
+const getDistance = (l1: { lat: number; lng: number }, l2: { lat: number; lng: number }) => {
+  const R = 6371; // km
+  const dLat = (l2.lat - l1.lat) * Math.PI / 180;
+  const dLng = (l2.lng - l1.lng) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(l1.lat * Math.PI / 180) * Math.cos(l2.lat * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
 export const Tracking = () => {
   const { user, role } = useAuth();
   const [activeDeliveries, setActiveDeliveries] = useState<Delivery[]>([]);
   const [busLocations, setBusLocations] = useState<Record<string, { lat: number; lng: number }>>({});
   const [etas, setEtas] = useState<Record<string, number>>({});
+  const [alertsShown, setAlertsShown] = useState<Set<string>>(new Set());
+  const [prefs, setPrefs] = useState<any>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    const fetchPrefs = async () => {
+      const docSnap = await getDoc(doc(db, 'user_preferences', user.uid));
+      if (docSnap.exists()) setPrefs(docSnap.data());
+    };
+    fetchPrefs();
+  }, [user]);
 
   const deliveriesWithLocations = activeDeliveries.map(d => ({
     ...d,
@@ -184,6 +207,26 @@ export const Tracking = () => {
     const remainingMins = mins % 60;
     return `${hours}H ${remainingMins}M`;
   };
+
+  useEffect(() => {
+    // Proximity Alert for Customers
+    if (prefs && prefs.hubArrivalAlerts === false) return;
+    
+    deliveriesWithLocations.forEach(d => {
+      if (!d.driverLocation) return;
+      
+      const target = d.status === 'accepted' ? d.pickup : d.dropoff;
+      const distance = getDistance(d.driverLocation, target);
+      const alertKey = `${d.id}-${d.status}-4km`;
+      
+      if (distance <= 4 && !alertsShown.has(alertKey)) {
+        setAlertsShown(prev => new Set(prev).add(alertKey));
+        // Use a browser notification or a toast
+        const msg = `বাস আর ৫-১০ মিনিটের মধ্যে হাবে পৌঁছাচ্ছে, প্রস্তুত থাকুন।`;
+        toast.success(msg, { duration: 10000 });
+      }
+    });
+  }, [deliveriesWithLocations, alertsShown]);
 
   useEffect(() => {
     if (!user || !role) return;
